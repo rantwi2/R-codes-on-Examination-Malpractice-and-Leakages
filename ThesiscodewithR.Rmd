@@ -1,0 +1,325 @@
+
+---
+title: "R codes for Examination Malpractice and Leakages 1 "
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+
+
+```{r}
+#Graph one State Variables Evolution
+library(deSolve)
+library(ggplot2)
+library(gridExtra)
+library(tidyverse)
+
+#I defined my compartment for my SEHMCR model
+malpractice_model <- function(t, state, parameters) {
+  with(as.list(c(state, parameters)), {
+    
+    dS <- Lambda  + omega * H - beta * S * M- mu * S
+    dE <- beta * S * M - (tau + sigma + mu) * E
+    dM <- sigma * E - (mu + alpha + delta) * M
+    dC <- alpha * M - (mu + gamma) * C
+    dR <- gamma * C + delta * M - (epsilon + mu) * R
+    dH <- tau * E + epsilon * R - omega * H - mu * H
+    
+    return(list(c(dS, dE, dM, dC, dR, dH)))
+  })
+}
+
+#  I set my Parameters with inital conditions which was derived from \citep{konlan2025} beta and gamma were assumed
+params <- c(Lambda = 50.0, mu = 0.0005, beta = 0.6, omega = 0.9,
+            tau = 0.5, sigma = 0.0044, alpha = 0.15, delta = 0.15,
+            gamma = 0.3, epsilon = 0.3)
+
+# Initial values from \citep{konlan2025} + Assumed E(0) for your work
+initial_state <- c(S = 120, E = 30, M = 25, C = 5, R = 5, H = 15)
+
+# Solve the system for 6 years 
+times <- seq(0, 5, by = 0.05)
+out <- as.data.frame(ode(y = initial_state, times = times, func = malpractice_model, parms = params))
+
+# other functions to help in plotting 
+plot_subpop <- function(data, var, color, title, ylab) {
+  ggplot(data, aes_string(x = "time", y = var)) +
+    geom_line(color = color, size = 1.2) +
+    labs(title = title, x = "Time (Years)", y = ylab) +
+    theme_bw() +
+    theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+}
+
+# Individual state variable evolution is generated 
+p2 <- plot_subpop(out, "S", "red", "Evolution of Susceptible Individuals", "Susceptible Individuals")
+p1 <- plot_subpop(out, "E", "yellow", "Evolution of Exposed Individuals", "Exposed Individuals")
+p3 <- plot_subpop(out, "M", "green", "Evolution of Malpractice Individuals", "Malpractice Individuals")
+p4 <- plot_subpop(out, "C", "black", "Evolution of Cancelled Individuals", "Cancelled Individuals")
+p5 <- plot_subpop(out, "R", "cyan", "Evolution of Recovered Individuals", "Recovered Individuals")
+p6 <- plot_subpop(out, "H", "blue", "Evolution of Honest Individuals", "Honest Individuals")
+
+# 6. Combining Plot for easy access
+p7 <- ggplot(out, aes(x = time)) +
+  geom_line(aes(y = S, color = "Susceptible")) +
+  geom_line(aes(y = E, color = "Exposed")) +
+  geom_line(aes(y = M, color = "Engaging")) +
+  geom_line(aes(y = C, color = "Cancelled")) +
+  geom_line(aes(y = R, color = "Recovered")) +
+  geom_line(aes(y = H, color = "Honest")) +
+  labs(title = "Evolution of Population Sub-Classes", x = "Time (Years)", y = "Populations") +
+  scale_color_manual(values = c("Susceptible"="red", "Exposed"="yellow", "Engaging"="green", 
+                               "Cancelled"="black", "Recovered"="cyan", "Honest"="blue")) +
+  theme_bw() + theme(legend.title = element_blank())
+
+# Individual plots to be displayed
+print(p2) # Fig 2
+print(p3) # Fig 3
+print(p4) # Fig 4
+print(p5)#Fig 5
+print(p6) #Fig 6
+print(p1)#Fig 1
+```
+
+```{r}
+#for the optimal control plots
+library(deSolve)
+library(ggplot2)
+library(gridExtra)
+library(tidyverse)
+
+# 
+malpractice_control <- function(t, state, parameters) {
+  with(as.list(c(state, parameters)), {
+    # w1, w2, w3 are the controls (0 to 1)
+    dS <- Lambda + omega*H- (1-w1)*beta*S*M  - mu*S
+    dE <- (1-w1)*beta*S*M - (tau + w2 + sigma + mu)*E
+    dM <- sigma*E - (mu + alpha + w3 + delta)*M
+    dC <- (alpha + w3)*M - (mu + gamma)*C
+    dR <- gamma*C + delta*M - (epsilon + mu)*R
+    dH <- (tau + w2)*E + epsilon*R - mu*H- omega*H 
+    
+    return(list(c(dS, dE, dM, dC, dR, dH)))
+  })
+}
+
+# initial values of Parameters 
+params_base <- c(Lambda = 50.0, mu = 0.0005, beta = 0.6, omega = 0.9,
+                 tau = 0.5, sigma = 0.0044, alpha = 0.15, delta = 0.15,
+                 gamma = 0.3, epsilon = 0.3, w1=0, w2=0, w3=0)
+
+# Optimal Control Parameters 
+params_opt <- params_base
+params_opt[c("w1", "w2", "w3")] <- 0.5
+
+# Initial state and time (6 years)
+init <- c(S = 120, E = 30, M = 25, C = 5, R = 5, H = 15)
+times <- seq(0, 5, by = 0.05)
+
+# Simulate
+out_base <- as.data.frame(ode(y = init, times = times, func = malpractice_control, parms = params_base))
+out_opt <- as.data.frame(ode(y = init, times = times, func = malpractice_control, parms = params_opt))
+
+# Plotting Comparison for Engaging Class (M)
+ggplot() +
+  geom_line(data=out_base, aes(x=time, y=M, color="No Control"), size=1.2) +
+  geom_line(data=out_opt, aes(x=time, y=M, color="Optimal Control"), linetype="dashed", size=1.2) +
+  labs(title="Impact of Optimal Control on Malpractice Engagement",
+       subtitle="Visualizing stability and control efficacy",
+       x="Time (Years)", y="Students Engaging in Malpractice (M)") +
+  theme_minimal()
+```
+
+```{r}
+library(deSolve)
+library(ggplot2)
+library(gridExtra)
+
+# Defining the Controlled ODE System 
+malpractice_control <- function(t, state, parameters) {
+  with(as.list(c(state, parameters)), {
+    # w1: Preventive, w2: Detective, w3: Corrective
+    dS <- Lambda - (1-w1)*beta*S*M + omega*H - mu*S
+    dE <- (1-w1)*beta*S*M - (tau + w2 + sigma + mu)*E
+    dM <- sigma*E - (mu + alpha + w3 + delta)*M
+    dC <- (alpha + w3)*M - (mu + gamma)*C
+    dR <- gamma*C + delta*M - (epsilon + mu)*R
+    dH <- (tau + w2)*E + epsilon*R - omega*H - mu*H
+    return(list(c(dS, dE, dM, dC, dR, dH)))
+  })
+}
+
+ 
+#initial values of Parameters 
+params_base <- c(Lambda = 50.0, mu = 0.0005, beta = 0.6, omega = 0.9,
+                 tau = 0.5, sigma = 0.0044, alpha = 0.15, delta = 0.15,
+                 gamma = 0.3, epsilon = 0.3, w1=0, w2=0, w3=0)
+
+# 50% Control Intensity 
+params_opt <- params_base
+params_opt[c("w1", "w2", "w3")] <- 0.5
+
+initial_state <- c(S = 120, E = 30, M = 25, C = 5, R = 5, H = 15)
+times <- seq(0, 5, by = 0.05)
+
+# 3. Simulate both scenarios
+out_no_ctrl <- as.data.frame(ode(y = initial_state, times = times, func = malpractice_control, parms = params_base))
+out_opt_ctrl <- as.data.frame(ode(y = initial_state, times = times, func = malpractice_control, parms = params_opt))
+
+# 4. Visualization for Exposed (E) Compartment
+p_exposed <- ggplot() +
+  geom_line(data=out_no_ctrl, aes(x=time, y=E, color="No Control"), size=1.2) +
+  geom_line(data=out_opt_ctrl, aes(x=time, y=E, color="Optimal Control"), linetype="dashed", size=1.2) +
+  labs(title="Comparison of Exposed Sub-population (E)", x="Time (Years)", y="Number of Exposed Students") +
+  theme_minimal()
+
+# 5. Visualization for Cancelled (C) Compartment
+p_cancelled <- ggplot() +
+  geom_line(data=out_no_ctrl, aes(x=time, y=C, color="No Control"), size=1.2) +
+  geom_line(data=out_opt_ctrl, aes(x=time, y=C, color="Optimal Control"), linetype="dashed", size=1.2) +
+  labs(title="Comparison of Cancelled Results (C)", x="Time (Years)", y="Students with Cancelled Results") +
+  theme_minimal()
+
+print(p_exposed)
+print(p_cancelled)
+```
+
+
+
+```{r}
+library(deSolve)
+library(ggplot2)
+
+# 1. Defining the Controlled ODE System 
+malpractice_control <- function(t, state, parameters) {
+  with(as.list(c(state, parameters)), {
+    # w1: Preventive, w2: Detective, w3: Corrective
+    dS <- Lambda - (1-w1)*beta*S*M + omega*H - mu*S
+    dE <- (1-w1)*beta*S*M - (tau + w2 + sigma + mu)*E
+    dM <- sigma*E - (mu + alpha + w3 + delta)*M
+    dC <- (alpha + w3)*M - (mu + gamma)*C
+    dR <- gamma*C + delta*M - (epsilon + mu)*R
+    dH <- (tau + w2)*E + epsilon*R - omega*H - mu*H
+    return(list(c(dS, dE, dM, dC, dR, dH)))
+  })
+}
+
+# 2. Parameters and Initial Conditions 
+params_base <- c(Lambda = 50.0, mu = 0.0005, beta = 0.6, omega = 0.9,
+                 tau = 0.5, sigma = 0.0044, alpha = 0.15, delta = 0.15,
+                 gamma = 0.3, epsilon = 0.3, w1=0, w2=0, w3=0)
+
+# Scenario: 50% Control Intensity for Optimal Control
+params_opt <- params_base
+params_opt[c("w1", "w2", "w3")] <- 0.5
+
+initial_state <- c(S = 120, E = 30, M = 25, C = 5, R = 5, H = 15)
+times <- seq(0, 6, by = 0.05)
+
+# 3. Solve for both scenarios
+out_no_ctrl <- as.data.frame(ode(y = initial_state, times = times, func = malpractice_control, parms = params_base))
+out_opt_ctrl <- as.data.frame(ode(y = initial_state, times = times, func = malpractice_control, parms = params_opt))
+
+# 4. Graph 1: Comparison for Exposed (E) Compartment
+ggplot() +
+  geom_line(data=out_no_ctrl, aes(x=time, y=E, color="No Control"), size=1.2) +
+  geom_line(data=out_opt_ctrl, aes(x=time, y=E, color="Optimal Control"), linetype="dashed", size=1.2) +
+  labs(title="Comparison of Exposed Sub-population (E)", 
+       subtitle="Impact of Preventive (w1) and Detective (w2) Controls",
+       x="Time (Years)", y="Exposed Students") +
+  theme_minimal()
+
+# 5. Graph 2: Comparison for Cancelled (C) Compartment
+ggplot() +
+  geom_line(data=out_no_ctrl, aes(x=time, y=C, color="No Control"), size=1.2) +
+  geom_line(data=out_opt_ctrl, aes(x=time, y=C, color="Optimal Control"), linetype="dashed", size=1.2) +
+  labs(title="Comparison of Cancelled Results (C)", 
+       subtitle="Impact of Corrective Control (w3)",
+       x="Time (Years)", y="Students with Cancelled Results") +
+  theme_minimal()
+```
+
+
+
+
+```{r}
+library(deSolve)
+library(ggplot2)
+
+# 1. Defining the Controlled ODE System 
+malpractice_control <- function(t, state, parameters) {
+  with(as.list(c(state, parameters)), {
+    # w1: Preventive, w2: Detective, w3: Corrective
+    dS <- Lambda - (1-w1)*beta*S*M + omega*H - mu*S
+    dE <- (1-w1)*beta*S*M - (tau + w2 + sigma + mu)*E
+    dM <- sigma*E - (mu + alpha + w3 + delta)*M
+    dC <- (alpha + w3)*M - (mu + gamma)*C
+    dR <- gamma*C + delta*M - (epsilon + mu)*R
+    dH <- (tau + w2)*E + epsilon*R - omega*H - mu*H
+    return(list(c(dS, dE, dM, dC, dR, dH)))
+  })
+}
+
+# 2. Parameters and Initial Conditions
+params_base <- c(Lambda = 50.0, mu = 0.0005, beta = 0.6, omega = 0.9,
+                 tau = 0.5, sigma = 0.0044, alpha = 0.15, delta = 0.15,gamma = 0.3, epsilon = 0.3, w1=0, w2=0, w3=0)
+
+# Scenario: 50% Control Intensity (w1, w2, w3 = 0.5)
+params_opt <- params_base
+params_opt[c("w1", "w2", "w3")] <- 0.5
+
+initial_state <- c(S = 120, E = 30, M = 25, C = 5, R = 5, H = 15)
+times <- seq(0, 6, by = 0.05)
+
+# 3. Here we Solve for No Control and Optimal Control
+out_no_ctrl <- as.data.frame(ode(y = initial_state, times = times, func = malpractice_control, parms = params_base))
+out_opt_ctrl <- as.data.frame(ode(y = initial_state, times = times, func = malpractice_control, parms = params_opt))
+
+
+# 4. This is for the Graphing: Comparison for Honest (H) Compartment
+ggplot() +
+  geom_line(data=out_no_ctrl, aes(x=time, y=H, color="No Control"), size=1.2) +
+  geom_line(data=out_opt_ctrl, aes(x=time, y=H, color="Optimal Control"), linetype="dashed", size=1.2) +
+  labs(title="Comparison of Honest Student Population (H)", 
+       subtitle="Impact of Detective (w2) and Corrective (w3) Controls",
+       x="Time (Years)", y="Number of Honest Students") +
+  theme_minimal() +
+  scale_color_manual(values = c("No Control" = "darkgreen", "Optimal Control" = "blue"))
+```
+
+
+```{r}
+#For the sensitivity Analysis
+sensitivity_indices <- function(p) {
+  sig <- p["sigma"]; tau <- p["tau"]; mu <- p["mu"]
+  alp <- p["alpha"]; del <- p["delta"]
+  A <- sig + tau + mu;  B <- alp + del + mu
+  c(
+    beta   =  1,
+    Lambda =  1,
+    sigma  =  B / (A + B),
+    tau    = -tau / A,
+    alpha  = -alp / B,
+    delta  = -del / B,
+    mu     = -1 - mu/A - mu/B
+  )
+}
+
+si <- sensitivity_indices(params)
+si_df <- data.frame(
+  param = names(si),
+  index = as.numeric(si),
+  direction = ifelse(as.numeric(si) > 0, "Positive", "Negative")
+)
+
+ggplot(si_df, aes(x = reorder(param, index), y = index, fill = direction)) +
+  geom_bar(stat = "identity", width = 0.6) +
+  coord_flip() +
+  scale_fill_manual(values = c("Positive" = "steelblue", "Negative" = "firebrick")) +
+  labs(title = "Sensitivity indices of R0",
+       x = "Parameter", y = "Normalised sensitivity index",
+       fill = "Impact") +
+  theme_minimal(base_size = 12)
+```
+
+
